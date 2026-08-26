@@ -60,6 +60,18 @@ public:
     }
   }
 
+  ftype ProcessSingle(ftype Pin)
+  {
+    Pin_ = Pin;
+
+    // Dirty oversampling_, no downsampling filter... Should be okay as there should not be really high frequency content
+    for (int i = 0; i < oversampling_; i++)
+    {
+      proc->Process(Pin_);
+    }
+    return proc->ReadRadiatedPressure() / 10000.; // - 80dB gain to be safe
+  }
+
   void setPin(float Pin)
   {
     Pin_ = Pin;
@@ -81,6 +93,9 @@ EMSCRIPTEN_BINDINGS(CLASS_VoiceKernel)
       .constructor()
       .function("process",
                 &VoiceKernel::Process,
+                allow_raw_pointers())
+      .function("processSingle",
+                &VoiceKernel::ProcessSingle,
                 allow_raw_pointers())
       .function("setPin",
                 &VoiceKernel::setPin,

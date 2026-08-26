@@ -19,6 +19,7 @@ class VoiceProcessor extends AudioWorkletProcessor {
       defaultValue:0.0,
       minValue:0,
       maxValue:5000,
+      automationRate:"a-rate"
     },
     {
       name:"a_ct",
@@ -82,7 +83,8 @@ class VoiceProcessor extends AudioWorkletProcessor {
 
     
     const Pin = parameters['Pin'];
-    this._kernel.setPin(Pin[0]);
+    // console.log(Pin);
+    
 
     const ct = parameters['a_ct'];
     const ta = parameters['a_ta'];
@@ -96,15 +98,24 @@ class VoiceProcessor extends AudioWorkletProcessor {
     // // Prepare HeapAudioBuffer for the channel count change in the current
     // // render quantum.
     // this._heapInputBuffer.adaptChannel(channelCount);
-    this._heapOutputBuffer.adaptChannel(channelCount);
+    if (Pin.length === 1){
+      this._kernel.setPin(Pin[0]);
+      this._heapOutputBuffer.adaptChannel(channelCount);
 
-    // // Copy-in, process and copy-out.
-    const ret = this._kernel.process(
-        // this._heapInputBuffer.getHeapAddress(),
-        this._heapOutputBuffer.getHeapAddress(),
-        channelCount);
-    for (let channel = 0; channel < channelCount; ++channel) {
-      output[channel].set(this._heapOutputBuffer.getChannelData(channel));
+      // // Copy-in, process and copy-out.
+      const ret = this._kernel.process(
+          // this._heapInputBuffer.getHeapAddress(),
+          this._heapOutputBuffer.getHeapAddress(),
+          channelCount);
+      for (let channel = 0; channel < channelCount; ++channel) {
+        output[channel].set(this._heapOutputBuffer.getChannelData(channel));
+      }
+    }
+    else {
+      this._heapOutputBuffer.adaptChannel(channelCount);
+      for (let sample = 0; sample < RENDER_QUANTUM_FRAMES; ++sample){
+        output[0][sample] = this._kernel.processSingle(Pin[sample]);
+      }
     }
     return true;
   }
