@@ -1,5 +1,5 @@
 
-import Module from './bowed-string-kernel.wasmmodule.js';
+import Module from './build/voice-kernel.wasmmodule.js';
 import {RENDER_QUANTUM_FRAMES, MAX_CHANNEL_COUNT, FreeQueue}
   from '../jsutils/free-queue.js';
 
@@ -15,20 +15,10 @@ class VoiceProcessor extends AudioWorkletProcessor {
 
   static get parameterDescriptors(){
     return [{
-      name:"bowVelocity",
+      name:"Pin",
       defaultValue:0.0,
       minValue:0,
-      maxValue:5,
-    },{
-      name:"bowForce",
-      defaultValue:0.0,
-      minValue:0,
-      maxValue:20,
-    },{
-      name:"fundamentalFrequency",
-      defaultValue:196.1,
-      minValue:40,
-      maxValue:1000,
+      maxValue:5000,
     }]
   };
 
@@ -47,7 +37,7 @@ class VoiceProcessor extends AudioWorkletProcessor {
         this._module, RENDER_QUANTUM_FRAMES, 2, MAX_CHANNEL_COUNT);
       this._heapOutputBuffer = new FreeQueue(
         this._module, RENDER_QUANTUM_FRAMES, 2, MAX_CHANNEL_COUNT);
-      this._kernel = new this._module.BowedStringKernel();
+      this._kernel = new this._module.VoiceKernel();
       console.log('WASM worklet initialized successfully');
     });
   }
@@ -71,20 +61,9 @@ class VoiceProcessor extends AudioWorkletProcessor {
     const input = inputs[0]; // first input, first channel
     const output = outputs[0];
     
-    const vBow = parameters['bowVelocity'];
-    const FBow = parameters['bowForce'];
-    const fundamentalFrequency = parameters['fundamentalFrequency'];
+    const Pin = parameters['Pin'];
 
-    this._kernel.setBowVelocity(vBow[0]);
-    this._kernel.setBowForce(FBow[0]);
-    this._kernel.setFundamentalFrequency(fundamentalFrequency[0]);
-
-    // for (let i = 0; i < input.length; i++) {
-    //   const inSample = input[i];
-    //   const decaySample = decay[i];
-    //   const outSample = this._kernel.process(inSample, decay);
-    //   output[i] = outSample;
-    // }
+    this._kernel.setPin(Pin[0]);
 
     // For this given render quantum, the channel count of the node is fixed
     // and identical for the input and the output.
@@ -96,9 +75,6 @@ class VoiceProcessor extends AudioWorkletProcessor {
     this._heapOutputBuffer.adaptChannel(channelCount);
 
     // // Copy-in, process and copy-out.
-    // for (let channel = 0; channel < channelCount; ++channel) {
-    //   this._heapInputBuffer.getChannelData(channel).set(input[channel]);
-    // }
     const ret = this._kernel.process(
         // this._heapInputBuffer.getHeapAddress(),
         this._heapOutputBuffer.getHeapAddress(),
@@ -106,15 +82,8 @@ class VoiceProcessor extends AudioWorkletProcessor {
     for (let channel = 0; channel < channelCount; ++channel) {
       output[channel].set(this._heapOutputBuffer.getChannelData(channel));
     }
-
-    
-    // const ret = this._kernel.process(
-    //   this._heapInputBuffer.getHeapAddress(),
-    //   this._heapOutputBuffer.getHeapAddress(),
-    //   channelCount
-    // );
     return true;
   }
 }
 
-registerProcessor('bowed-string-processor', VoiceProcessor);
+registerProcessor('voice-processor', VoiceProcessor);
