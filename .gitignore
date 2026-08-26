@@ -1,0 +1,8 @@
+node_modules
+package-lock.json
+
+.DS_Store
+Thumb.db
+
+# Compiled wasm files (in fact, they probably need to be added when serving...)
+*kernel.wasmmodule.js
