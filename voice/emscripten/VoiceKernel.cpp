@@ -38,6 +38,7 @@ public:
     proc->get_resonator()->set_lp_frequencies(5);
     proc->get_resonator()->SetTargetGeometryFromArticulation(art);
     proc->get_vocal_folds()->set_noise_ratio(0.08);
+    proc->get_vocal_folds()->set_epsilon_smooth(1e-4);
     proc->set_lambda_sav(1000);
   }
 
@@ -53,7 +54,7 @@ public:
       for (int i = 0; i < oversampling_; i++)
       {
         proc->Process(Pin_);
-        out = proc->ReadRadiatedPressure() / 1000.;
+        out = proc->ReadRadiatedPressure() / 10000.; // - 80dB gain to be safe
       }
       output_buffer[sample] = out;
     }
@@ -62,6 +63,15 @@ public:
   void setPin(float Pin)
   {
     Pin_ = Pin;
+  }
+
+  void setMusclesActivation(const ftype &ct_activity,
+                            const ftype &ta_activity,
+                            const ftype &lc_activity)
+  {
+    proc->get_vocal_folds()->set_muscles_activation(ct_activity,
+                                                    ta_activity,
+                                                    lc_activity);
   }
 };
 
@@ -74,5 +84,8 @@ EMSCRIPTEN_BINDINGS(CLASS_VoiceKernel)
                 allow_raw_pointers())
       .function("setPin",
                 &VoiceKernel::setPin,
+                allow_raw_pointers())
+      .function("setMusclesActivation",
+                &VoiceKernel::setMusclesActivation,
                 allow_raw_pointers());
 }
