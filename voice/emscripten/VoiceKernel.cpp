@@ -23,7 +23,7 @@ private:
 
   int oversampling_ = 1;
 
-  float sr_{44100}, sr0_{441000};
+  float sr_{44100}, sr0_{44100};
 
 public:
   VoiceKernel()
@@ -53,7 +53,7 @@ public:
       for (int i = 0; i < oversampling_; i++)
       {
         proc->Process(Pin_);
-        out = proc->ReadRadiatedPressure();
+        out = proc->ReadRadiatedPressure() / 1000.;
       }
       output_buffer[sample] = out;
     }

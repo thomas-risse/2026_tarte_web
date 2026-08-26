@@ -4,13 +4,13 @@ INCLUDES = -I./emscripten -I./tarte/include -I./tarte/include/vocal_folds -I./ta
 CFLAGS  = -std=c++20
 
 build: $(SRCS)
-	emcc --bind -O2 -std=c++20 \
+	emcc --bind -O2 -std=c++20\
 		-s WASM=1 \
 		-s WASM_ASYNC_COMPILATION=0 \
 		-s SINGLE_FILE=1 \
 		$(SRCS) \
 		$(INCLUDES) \
-		-o build/voice-kernel.wasmmodule.js \
+		-o buildout/voice-kernel.wasmmodule.js \
 		-s MODULARIZE=1 \
 		-s EXPORT_ES6=1 \
 		-s EXPORTED_FUNCTIONS="['_malloc']" \

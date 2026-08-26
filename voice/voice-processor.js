@@ -1,5 +1,5 @@
 
-import Module from './build/voice-kernel.wasmmodule.js';
+import Module from './buildout/voice-kernel.wasmmodule.js';
 import {RENDER_QUANTUM_FRAMES, MAX_CHANNEL_COUNT, FreeQueue}
   from '../jsutils/free-queue.js';
 
@@ -38,7 +38,7 @@ class VoiceProcessor extends AudioWorkletProcessor {
       this._heapOutputBuffer = new FreeQueue(
         this._module, RENDER_QUANTUM_FRAMES, 2, MAX_CHANNEL_COUNT);
       this._kernel = new this._module.VoiceKernel();
-      console.log('WASM worklet initialized successfully');
+      console.log('Voice WASM worklet initialized successfully');
     });
   }
 
@@ -60,9 +60,10 @@ class VoiceProcessor extends AudioWorkletProcessor {
     // interface. (i.e. An array of Float32Array)
     const input = inputs[0]; // first input, first channel
     const output = outputs[0];
+
     
     const Pin = parameters['Pin'];
-
+    
     this._kernel.setPin(Pin[0]);
 
     // For this given render quantum, the channel count of the node is fixed
