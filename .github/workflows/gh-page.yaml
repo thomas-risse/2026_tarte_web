@@ -24,13 +24,6 @@ jobs:
         run : |
           git submodule update --init
       
-      - name: install emcc
-        run : |
-          git pull
-          ./emsdk install latest
-          ./emsdk activate latest
-          source ./emsdk_env.
-      
       - name: Get emcc
         uses: emscripten-core/setup-emsdk@v15
 
