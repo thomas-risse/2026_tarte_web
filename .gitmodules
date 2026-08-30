@@ -1,0 +1,6 @@
+[submodule "voice/tarte"]
+	path = voice/tarte
+	url = https://github.com/Ircam-RnD/tarte
+[submodule "eigen"]
+	path = eigen
+	url = https://gitlab.com/libeigen/eigen

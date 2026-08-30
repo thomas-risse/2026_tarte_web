@@ -1,0 +1,5 @@
+add_subdirectory(Duffing)
+add_subdirectory(WebsterFDTD)
+add_subdirectory(WebsterFDTDTiming)
+add_subdirectory(Voice)
+add_subdirectory(SingleReed)
