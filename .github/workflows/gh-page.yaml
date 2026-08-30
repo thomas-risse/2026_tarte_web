@@ -29,7 +29,10 @@ jobs:
           git pull
           ./emsdk install latest
           ./emsdk activate latest
-          source ./emsdk_env.sh
+          source ./emsdk_env.
+      
+      - name: Get emcc
+        uses: emscripten-core/setup-emsdk@v15
 
       - name: Build wasm worlet
         run : |
