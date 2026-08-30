@@ -8,3 +8,5 @@ Thumb.db
 *kernel.wasmmodule.js
 
 *.wav
+
+*build
