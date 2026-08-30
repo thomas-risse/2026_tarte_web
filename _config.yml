@@ -1,0 +1,6 @@
+exclude:
+  - eigen/
+  - tarte/
+  - buildout/
+  - emscripten/
+  
