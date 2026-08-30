@@ -10,7 +10,7 @@ build: $(SRCS)
 		-s SINGLE_FILE=1 \
 		$(SRCS) \
 		$(INCLUDES) \
-		-o buildout/voice-kernel.wasmmodule.js \
+		-o ./buildout/voice-kernel.wasmmodule.js \
 		-s MODULARIZE=1 \
 		-s EXPORT_ES6=1 \
 		-s EXPORTED_FUNCTIONS="['_malloc']" \

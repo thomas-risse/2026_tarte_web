@@ -30,6 +30,7 @@ jobs:
       - name: Build wasm worlet
         run : |
           cd voice
+          mkdir buildout
           make
 
       - name: Build site
