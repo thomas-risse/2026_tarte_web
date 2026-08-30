@@ -1,6 +1,16 @@
 {
-  "type": "module",
+  "scripts": {
+    "dev": "\"esbuild main.js --bundle --format=esm --watch --sourcemap=inline --outfile=build/index.js\" \"serve\"",
+    "build": "esbuild main.js --bundle --format=esm --sourcemap=inline --outfile=build/index.js"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "esbuild": "^0.21.5",
+    "serve": "^14.2.3"
+  },
   "dependencies": {
-    "node-web-audio-api": "^2.2.0"
-  }
+    "@ircam/sc-components": "^3.0.0-alpha.61",
+    "lit": "^3.1.4"
+  },
+  "name": "tarte-web"
 }

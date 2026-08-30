@@ -19,7 +19,6 @@ private:
   tarte::Articulation art;
 
   float Pin_{0};
-  float out;
 
   int oversampling_ = 1;
 
@@ -54,9 +53,8 @@ public:
       for (int i = 0; i < oversampling_; i++)
       {
         proc->Process(Pin_);
-        out = proc->ReadRadiatedPressure() / 10000.; // - 80dB gain to be safe
       }
-      output_buffer[sample] = out;
+      output_buffer[sample] = proc->ReadRadiatedPressure() / 10000.; // - 80dB gain to be safe
     }
   }
 

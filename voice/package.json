@@ -1,0 +1,15 @@
+{
+  "name": "example-voice",
+  "version": "1.0.0",
+  "main": "node-example.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "BSD-3-Clause",
+  "description": "",
+  "dependencies": {
+    "node-web-audio-api": "^1.0.9"
+  }
+}

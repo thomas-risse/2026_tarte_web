@@ -1,3 +1,15 @@
+// crypto doenst load correctly here so we override it. As it is only used for
+// audio noise generation, it should be okay.
+if (typeof crypto === 'undefined') {
+  globalThis.crypto = {
+    getRandomValues(arr) {
+      for (let i = 0; i < arr.length; i++) {
+        arr[i] = Math.floor(Math.random() * 256);
+      }
+      return arr;
+    }
+  };
+}
 
 import Module from './buildout/voice-kernel.wasmmodule.js';
 import {RENDER_QUANTUM_FRAMES, MAX_CHANNEL_COUNT, FreeQueue}
@@ -78,7 +90,7 @@ class VoiceProcessor extends AudioWorkletProcessor {
     // Use the 1st input and output only to make the example simple. |input|
     // and |output| here have the similar structure with the AudioBuffer
     // interface. (i.e. An array of Float32Array)
-    const input = inputs[0]; // first input, first channel
+    // const input = inputs[0]; // first input, first channel
     const output = outputs[0];
 
     
@@ -93,12 +105,12 @@ class VoiceProcessor extends AudioWorkletProcessor {
 
     // For this given render quantum, the channel count of the node is fixed
     // and identical for the input and the output.
-    const channelCount = input.length;
+    const channelCount = 1;
 
     // // Prepare HeapAudioBuffer for the channel count change in the current
     // // render quantum.
     // this._heapInputBuffer.adaptChannel(channelCount);
-    if (Pin.length === 1){
+    // if (Pin.length === 1){
       this._kernel.setPin(Pin[0]);
       this._heapOutputBuffer.adaptChannel(channelCount);
 
@@ -110,13 +122,13 @@ class VoiceProcessor extends AudioWorkletProcessor {
       for (let channel = 0; channel < channelCount; ++channel) {
         output[channel].set(this._heapOutputBuffer.getChannelData(channel));
       }
-    }
-    else {
-      this._heapOutputBuffer.adaptChannel(channelCount);
-      for (let sample = 0; sample < RENDER_QUANTUM_FRAMES; ++sample){
-        output[0][sample] = this._kernel.processSingle(Pin[sample]);
-      }
-    }
+    // }
+    // else {
+    //   this._heapOutputBuffer.adaptChannel(channelCount);
+    //   for (let sample = 0; sample < RENDER_QUANTUM_FRAMES; ++sample){
+    //     // output[0][sample] = this._kernel.processSingle(Pin[sample]);
+    //   }
+    // }
     return true;
   }
 }
