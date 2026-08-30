@@ -1,5 +1,5 @@
 SRCS = ./emscripten/VoiceKernel.cpp ./tarte/src/voice.cpp ./tarte/src/websterFDTD.cpp  
-INCLUDES = -I./emscripten -I./tarte/include -I./tarte/include/vocal_folds -I./tarte/include/utility -I/opt/homebrew/Cellar/eigen/5.0.1/include/eigen3
+INCLUDES = -I./emscripten -I./tarte/include -I./tarte/include/vocal_folds -I./tarte/include/utility -I../eigen/
 
 CFLAGS  = -std=c++20
 
