@@ -19,6 +19,10 @@ jobs:
 
       - name: Install Node
         uses: actions/setup-node@v4
+      
+      - name: update submodule
+        run : |
+          git submodule update --init
 
       - name: Build wasm worlet
         run : |
