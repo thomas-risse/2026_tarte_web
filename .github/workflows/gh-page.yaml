@@ -23,6 +23,13 @@ jobs:
       - name: update submodule
         run : |
           git submodule update --init
+      
+      - name: install emcc
+        run : |
+          git pull
+          ./emsdk install latest
+          ./emsdk activate latest
+          source ./emsdk_env.sh
 
       - name: Build wasm worlet
         run : |
