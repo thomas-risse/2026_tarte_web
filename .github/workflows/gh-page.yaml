@@ -16,9 +16,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Install Node
-        uses: actions/setup-node@v4
       
       - name: update submodule
         run : |
@@ -31,10 +28,6 @@ jobs:
         run : |
           cd voice
           make
-
-      - name: Node dependencies
-        run: | 
-          npm install
 
       - name: Deploy
         uses: JamesIves/github-pages-deploy-action@v4
