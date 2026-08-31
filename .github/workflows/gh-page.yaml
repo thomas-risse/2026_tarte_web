@@ -30,9 +30,7 @@ jobs:
       - name: Build wasm worlet
         run : |
           cd voice
-          mkdir buildout
           make
-          ls buildout
 
       - name: Node dependencies
         run: | 
