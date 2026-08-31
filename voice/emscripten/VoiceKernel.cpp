@@ -20,8 +20,6 @@ private:
 
   float Pin_{0};
 
-  int oversampling_ = 1;
-
   float sr_{44100}, sr0_{44100};
 
 public:
@@ -34,7 +32,7 @@ public:
     art.SetFromVowel(tarte::vowels::a);
     proc->get_resonator()->set_l0(17e-2);
     proc->get_resonator()->set_time_varying_geometry(true);
-    proc->get_resonator()->set_lp_frequencies(5);
+    proc->get_resonator()->set_N_update_geometry(20);
     proc->get_resonator()->SetTargetGeometryFromArticulation(art);
     proc->get_vocal_folds()->set_noise_ratio(0.08);
     proc->get_vocal_folds()->set_epsilon_smooth(1e-4);
@@ -49,11 +47,7 @@ public:
 
     for (unsigned sample = 0; sample < kRenderQuantumFrames; ++sample)
     {
-      // Dirty oversampling_, no downsampling filter... Should be okay as there should not be really high frequency content
-      for (int i = 0; i < oversampling_; i++)
-      {
-        proc->Process(Pin_);
-      }
+      proc->Process(Pin_);
       output_buffer[sample] = proc->ReadRadiatedPressure() / 10000.; // - 80dB gain to be safe
     }
   }
@@ -82,6 +76,12 @@ public:
     proc->get_vocal_folds()->set_muscles_activation(ct_activity,
                                                     ta_activity,
                                                     lc_activity);
+  }
+
+  void setGeometryFromFormants(const ftype &F1, const ftype &F2)
+  {
+    art.SetFromFormants(F1, F2);
+    proc->get_resonator()->SetTargetGeometryFromArticulation(art);
   }
 };
 
