@@ -55,12 +55,7 @@ public:
   ftype ProcessSingle(ftype Pin)
   {
     Pin_ = Pin;
-
-    // Dirty oversampling_, no downsampling filter... Should be okay as there should not be really high frequency content
-    for (int i = 0; i < oversampling_; i++)
-    {
-      proc->Process(Pin_);
-    }
+    proc->Process(Pin_);
     return proc->ReadRadiatedPressure() / 10000.; // - 80dB gain to be safe
   }
 
