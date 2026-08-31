@@ -75,14 +75,7 @@ void WebsterFDTD<ftype, kMaxN>::DspSetup(ftype sampleRate, Articulation* art)
     UpdateCoefficients();
 
     // LFPs
-    N_lpf_ = N_; // one filter per direct-grid point
-    for (int i = 0; i < N_lpf_; ++i) {
-        lp_filters_[i] = Biquad(sr_, kLowPass, lpf_frequency_, 0.0f, 0.5f);
-        if (i < N_lpf_) {
-            lp_filters_[i].InitializeState(static_cast<double>(S_target_[i]));
-        }
-    }
-    set_lp_Qs(0.5);
+    initializeFilters();
 }
 
 template<typename ftype, int kMaxN>
@@ -222,11 +215,13 @@ void WebsterFDTD<ftype, kMaxN>::Process(ftype inputFlow, ftype outputFlow)
     dv(N_ - 1) = 0;
     dv.tail(N_ - 1) += C_low * vel;
 
-    rho_next(0) += G_ * inputFlow / A(0);
-
     if (yielding_walls_) {
 
-        rho_next = (1 / A) * (B * rho_now + dv + D * wp_now + E * wdisp - rho0_ * (dSp / Sp));
+        if (pumped_flow_) {
+            rho_next = (1 / A) * (B * rho_now + dv + D * wp_now + E * wdisp - rho0_ * (dSp / Sp));
+        } else {
+            rho_next = (1 / A) * (B * rho_now + dv + D * wp_now + E * wdisp);
+        }
 
         rho_next(0) += G_ * inputFlow / A(0);
         if (radiation_) {
@@ -243,7 +238,11 @@ void WebsterFDTD<ftype, kMaxN>::Process(ftype inputFlow, ftype outputFlow)
         wdisp += dt_ * ftype(0.5) / wall_area_mass_ * (wp_now + wp_next);
 
     } else {
-        rho_next = (1 / A) * (B * rho_now + dv - rho0_ * (1 / Sp * dSp));
+        if (pumped_flow_) {
+            rho_next = (1 / A) * (B * rho_now + dv - rho0_ * (1 / Sp * dSp));
+        } else {
+            rho_next = (1 / A) * (B * rho_now + dv);
+        }
 
         rho_next(0) += G_ * inputFlow / A(0);
         if (radiation_) {
@@ -260,30 +259,44 @@ void WebsterFDTD<ftype, kMaxN>::Process(ftype inputFlow, ftype outputFlow)
     flip_ = !flip_;
 
     if (time_varying_geometry_) {
-        // ~19 ms total
-        for (int i = 0; i < N_ + 1 && i < N_lpf_; ++i) {
-            S_direct_[i] = static_cast<ftype>(lp_filters_[i].Process(static_cast<double>(S_target_[i])));
-        } // ~9ms
+        update_counter_geometry_ += 1;
 
-        ComputeDiscreteGreometry();  // ~1ms
-        UpdateRadiationParameters(); // negligible
-        UpdateCoefficients();        // ~ 7 ms
+        if (update_counter_geometry_ == N_update_geometry_) {
+            // Filters sampling rate is adapted at initialization to match the down sampling here
+            for (int i = 0; i < N_ && i < N_lpf_; ++i) {
+                S_direct_[i] = static_cast<ftype>(lp_filters_[i].Process(static_cast<double>(S_target_[i])));
+            }
+            ComputeDiscreteGreometry();
+            UpdateRadiationParameters();
+            UpdateCoefficients();
 
-        S_direct_last_.head(N_ + 1) = S_direct_.head(N_ + 1);
-        S_primal_last_.head(N_) = S_primal_.head(N_);
-        d_S_primal_.head(N_) = (S_primal_.head(N_) - S_primal_last_.head(N_)) / dt_;
+            if (N_update_geometry_ == 1) {
+                S_direct_last_.head(N_) = S_direct_.head(N_);
+                S_primal_last_.head(N_) = S_primal_.head(N_);
+                d_S_primal_.head(N_) = (S_primal_.head(N_) - S_primal_last_.head(N_)) / dt_;
+            }
+            update_counter_geometry_ = 0;
+        }
     }
 }
 
 template<typename ftype, int kMaxN>
 std::tuple<ftype, ftype> WebsterFDTD<ftype, kMaxN>::GetIOLinearDependencyCoefficients()
 {
-    return {c02_ * ftype(0.5) *
-                (rho_now_ac()(0) +
-                 (1 / A_(0)) * (B_(0) * rho_now_ac()(0) - S_dual_(0) / S_primal_(0) * rho0_ / h_ * vel_(0) +
-                                D_(0) * wall_momentum_now_ac()(0) + E_(0) * wall_displacement_(0) -
-                                rho0_ * (d_S_primal_(0) / S_primal_(0)))),
-            ftype(0.5) * c02_ * (1 / A_(0)) * G_};
+    if (pumped_flow_) {
+        return {c02_ * ftype(0.5) *
+                    (rho_now_ac()(0) +
+                     (1 / A_(0)) * (B_(0) * rho_now_ac()(0) - S_dual_(0) / S_primal_(0) * rho0_ / h_ * vel_(0) +
+                                    D_(0) * wall_momentum_now_ac()(0) + E_(0) * wall_displacement_(0) -
+                                    rho0_ * (d_S_primal_(0) / S_primal_(0)))),
+                ftype(0.5) * c02_ * (1 / A_(0)) * G_};
+    } else {
+        return {c02_ * ftype(0.5) *
+                    (rho_now_ac()(0) +
+                     (1 / A_(0)) * (B_(0) * rho_now_ac()(0) - S_dual_(0) / S_primal_(0) * rho0_ / h_ * vel_(0) +
+                                    D_(0) * wall_momentum_now_ac()(0) + E_(0) * wall_displacement_(0))),
+                ftype(0.5) * c02_ * (1 / A_(0)) * G_};
+    }
 }
 
 template<typename ftype, int kMaxN>
@@ -560,11 +573,16 @@ void WebsterFDTD<ftype, kMaxN>::filterSdirectTarget()
 }
 
 template<typename ftype, int kMaxN>
-void WebsterFDTD<ftype, kMaxN>::initializeLPFStates()
+void WebsterFDTD<ftype, kMaxN>::initializeFilters()
 {
-    for (int i = 0; i < N_lpf_ && i < N_ + 1; ++i) {
+    N_lpf_ = N_; // one filter per direct-grid point
+    for (int i = 0; i < N_lpf_; ++i) {
+        lp_filters_[i] = Biquad(sr_ / N_update_geometry_, kLowPass, lpf_frequency_, 0.0f, 0.5f);
         lp_filters_[i].InitializeState(static_cast<double>(S_target_[i]));
     }
+    ComputeDiscreteGreometry();
+    UpdateRadiationParameters();
+    UpdateCoefficients();
 }
 
 // Default to kMaxN = 50, enough for voice at 96000 Hz

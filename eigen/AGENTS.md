@@ -86,9 +86,19 @@ default.
 
 A posted code suggestion is a sketch that has not been compiled; verify it like your own work before adopting it —
 including the C++14 baseline, `Matrix`/`Array` and expression-type mismatches, and numerically deliberate groupings.
+Reproduce a claimed defect before fixing it, and judge the suggested remedy separately from the finding: a real bug
+often arrives with a fix that breaks cases the current code handles. Hold your own claims to the same standard —
+a behavioral claim is established by reading the function body and the branch actually taken, never by a header's
+own Doxygen, which can be stale or describe an adjacent case; confirming that a path or symbol exists proves nothing
+about behavior, and universals need enumeration rather than inference from a few instances.
 Address every thread: apply the suggestion or explain the deviation, naming the commit that resolved it. Keep the
 response within the comment's scope; a defect it exposes in shared code belongs in its own commit or merge request.
 After each round, re-verify that the merge request description and commit messages still describe the current head.
+
+GitLab renders KaTeX in merge request descriptions and comments. Typeset real mathematics — bounds, recurrences,
+identities, error terms — as math: inline with dollar-backtick delimiters (``$`h_j = \varepsilon\,\max(|x_j|, 1)`$``;
+bare `$...$` does not render on gitlab.com), display equations in a fenced ` ```math ` block. Keep identifiers that
+name actual code (`eps`, `numext::maxi`) in code spans, and do not dress a code-level statement up in LaTeX.
 
 ## Repository essentials
 
@@ -159,7 +169,10 @@ for internal invariants gated by `EIGEN_INTERNAL_DEBUGGING`. Use the local compi
 clearest diagnostic. Comments should explain non-obvious mathematics, invariants, compatibility constraints, or
 provenance rather than narrating the code. Keep comments concise and proportional to the code's complexity. Avoid
 tutorial-style prose, section-by-section narration, and comments that restate identifiers or control flow. Longer
-comments are justified only when that rationale cannot be expressed clearly in code.
+comments are justified only when that rationale cannot be expressed clearly in code. Reviewers here read mathematics
+and code faster than English: where a formula, a recurrence, an error bound, or two lines of pseudo-code state the
+point more precisely than a paragraph, write that instead. The same preference applies to merge request descriptions
+and review comments.
 
 ## Quick build and test
 

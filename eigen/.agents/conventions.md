@@ -10,7 +10,13 @@ current form, and a file being edited heavily should come out uniform rather tha
 - Trait and evaluator constants are `static constexpr` members, not `enum` blocks; `enum` constants are being phased
   out. Give each the type it is used as: `Flags` is `unsigned int` by convention, predicates are `bool`.
 - Prefer `using` to `typedef`, `nullptr` to `NULL`, `= default` and default member initializers to empty constructor
-  bodies that assign each member.
+  bodies that assign each member. `using` binds in every tree, `test/` and `unsupported/` included: those were left
+  out of the sweep that converted `Eigen/src`, so the aliases surrounding new code there are mostly still `typedef`
+  and matching the neighbours reproduces the form the sweep removed. Do not rely on CI to catch it — the
+  `modernize-use-using` gap recorded at [`scripts/check_style.py`](../scripts/check_style.py) leaves function-local
+  typedefs unreported.
+- `kCamelCase` is an accepted spelling for `static constexpr` and static constants, alongside the older `snake_case`
+  and `SCREAMING_CASE` forms. It is not a review finding.
 - Use `numext::` math functions rather than `std::` in library code, and Eigen's metaprogramming aliases
   (`bool_constant`, `void_t`, `remove_all_t`; see `Eigen/src/Core/util/Meta.h`) rather than spelling out the standard
   forms. `internal::is_arithmetic` is not a spelling of `std::is_arithmetic`: it is deliberately specialized for
@@ -41,6 +47,26 @@ The comment rules in the repository-root `AGENTS.md` are enforced in review and 
 here. Before publishing a diff, reread each added comment and delete the ones that narrate code or restate an
 identifier. Keep the ones recording mathematics, invariants, compatibility constraints, provenance, or the reason a
 slower or unusual form is deliberate — stated at the construct, not in the merge request.
+
+Prefer the most precise notation that fits. A recurrence, an error bound, an invariant written as an expression, or
+two lines of pseudo-code usually carry more than a paragraph and are read faster by this audience:
+
+```cpp
+// Bad: the relative error in summing n elements this way is bounded by roughly twice the
+// machine epsilon multiplied by the quantity log base two of n over B, plus B, where B is
+// the number of elements summed sequentially in each leaf of the tree.
+
+// Good: tree summation, relative error <= ~2*eps*(log2(n/B) + B) for leaf size B.
+```
+
+Only when it genuinely fits. A bound, invariant, or identity stated exactly earns the switch even when prose
+already half-carries it — `m` kept in `[1, 2)` says more than "balanced form", and a named theorem should come with
+its statement rather than sending the reader to the paper for one exponent. Notation that restates something already
+obvious from the code is the same defect as prose that does, and the losing case is a symbol invented for a single
+sentence — reuse whatever the surrounding file and the cited reference already use, and spell out any symbol that is
+not standard in context.
+Prose is the right tool for a *reason*: why this form and not the obvious one. Comments are plain text, so write
+expressions the way the rest of the tree does rather than in a markup language that does not render.
 
 ## REUSE metadata for new files
 

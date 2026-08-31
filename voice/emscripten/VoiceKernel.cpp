@@ -20,20 +20,19 @@ private:
 
   float Pin_{0};
 
-  int oversampling_ = 1;
-
-  float sr_{44100}, sr0_{44100};
+  float sr_;
 
 public:
-  VoiceKernel()
+  VoiceKernel(float samplerate)
   {
     // Model instanciation
-    sr_ = sr0_ * oversampling_;
+    sr_ = samplerate;
     proc = std::make_shared<tarte::Voice<tarte::BodyCoverPair<ftype>, ftype>>(sr_, true);
 
     art.SetFromVowel(tarte::vowels::a);
     proc->get_resonator()->set_l0(17e-2);
     proc->get_resonator()->set_time_varying_geometry(true);
+    proc->get_resonator()->set_N_update_geometry(10);
     proc->get_resonator()->set_lp_frequencies(5);
     proc->get_resonator()->SetTargetGeometryFromArticulation(art);
     proc->get_vocal_folds()->set_noise_ratio(0.08);
@@ -49,11 +48,7 @@ public:
 
     for (unsigned sample = 0; sample < kRenderQuantumFrames; ++sample)
     {
-      // Dirty oversampling_, no downsampling filter... Should be okay as there should not be really high frequency content
-      for (int i = 0; i < oversampling_; i++)
-      {
-        proc->Process(Pin_);
-      }
+      proc->Process(Pin_);
       output_buffer[sample] = proc->ReadRadiatedPressure() / 10000.; // - 80dB gain to be safe
     }
   }
@@ -61,12 +56,7 @@ public:
   ftype ProcessSingle(ftype Pin)
   {
     Pin_ = Pin;
-
-    // Dirty oversampling_, no downsampling filter... Should be okay as there should not be really high frequency content
-    for (int i = 0; i < oversampling_; i++)
-    {
-      proc->Process(Pin_);
-    }
+    proc->Process(Pin_);
     return proc->ReadRadiatedPressure() / 10000.; // - 80dB gain to be safe
   }
 
@@ -83,12 +73,18 @@ public:
                                                     ta_activity,
                                                     lc_activity);
   }
+
+  void setGeometryFromFormants(const ftype &F1, const ftype &F2)
+  {
+    art.SetFromFormants(F1, F2);
+    proc->get_resonator()->SetTargetGeometryFromArticulation(art);
+  }
 };
 
 EMSCRIPTEN_BINDINGS(CLASS_VoiceKernel)
 {
   class_<VoiceKernel>("VoiceKernel")
-      .constructor()
+      .constructor<float>()
       .function("process",
                 &VoiceKernel::Process,
                 allow_raw_pointers())
@@ -100,5 +96,8 @@ EMSCRIPTEN_BINDINGS(CLASS_VoiceKernel)
                 allow_raw_pointers())
       .function("setMusclesActivation",
                 &VoiceKernel::setMusclesActivation,
+                allow_raw_pointers())
+      .function("setGeometryFromFormants",
+                &VoiceKernel::setGeometryFromFormants,
                 allow_raw_pointers());
 }

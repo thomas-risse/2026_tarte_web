@@ -64,6 +64,15 @@ struct packet_traits<numext::int32_t> : default_packet_traits {
     HasMin = 1,
     HasMax = 1,
     HasConj = 1,
+    // HasSetLinear and HasCmp stay 0 even though plset and pcmp_{eq,lt,le} are
+    // implemented below: both flags route work onto a packet path that measures
+    // far slower than the scalar loop GCC autovectorizes. On Neoverse V2 at
+    // VL=128, HasSetLinear costs LinSpaced 20.7 -> 60.6 us for float and
+    // 20.7 -> 121.6 us for double, and HasCmp costs (a < b).select(a, b)
+    // 6.2 -> 50.6 us. Neither is explained by pselect: these numbers are with
+    // the svsel specialization below in place, and it made the LinSpaced case
+    // worse rather than better. The cause is higher up, in how those evaluators
+    // drive the packet path, and should be found before either flag is set.
     HasSetLinear = 0,
     HasReduxp = 0  // Not implemented in SVE
   };
@@ -94,9 +103,7 @@ EIGEN_STRONG_INLINE PacketXi pset1<PacketXi>(const numext::int32_t& from) {
 
 template <>
 EIGEN_STRONG_INLINE PacketXi plset<PacketXi>(const numext::int32_t& a) {
-  numext::int32_t c[packet_traits<numext::int32_t>::size];
-  for (int i = 0; i < packet_traits<numext::int32_t>::size; i++) c[i] = i;
-  return svadd_s32_x(svptrue_b32(), pset1<PacketXi>(a), svld1_s32(svptrue_b32(), c));
+  return svindex_s32(a, 1);
 }
 
 template <>
@@ -189,6 +196,17 @@ EIGEN_STRONG_INLINE PacketXi pandnot<PacketXi>(const PacketXi& a, const PacketXi
   return svbic_s32_x(svptrue_b32(), a, b);
 }
 
+// SVE selects on a predicate, so turn Eigen's all-ones/all-zeros value mask back
+// into one and use svsel rather than the generic por(pand, pandnot). Measured on
+// Neoverse V2 at VL=128: latency 3.18 -> 2.55 ns, throughput 0.80 -> 0.64 ns/op.
+// SVE2's single-instruction svbsl is no faster than this, so it is not worth an
+// ISA-conditional path. The mask is compared as an integer: as a float it would
+// be a NaN bit pattern, and relying on NaN != 0 is needlessly subtle.
+template <>
+EIGEN_STRONG_INLINE PacketXi pselect<PacketXi>(const PacketXi& mask, const PacketXi& a, const PacketXi& b) {
+  return svsel_s32(svcmpne_n_s32(svptrue_b32(), mask, 0), a, b);
+}
+
 template <int N>
 EIGEN_STRONG_INLINE PacketXi parithmetic_shift_right(const PacketXi& a) {
   // ASR, not ASRD: ASRD is the shift-for-divide form, which rounds toward zero,
@@ -218,17 +236,24 @@ EIGEN_STRONG_INLINE PacketXi ploadu<PacketXi>(const numext::int32_t* from) {
 
 template <>
 EIGEN_STRONG_INLINE PacketXi ploaddup<PacketXi>(const numext::int32_t* from) {
-  svuint32_t indices = svindex_u32(0, 1);  // index {base=0, base+step=1, base+step*2, ...}
-  indices = svzip1_u32(indices, indices);  // index in the format {a0, a0, a1, a1, a2, a2, ...}
-  return svld1_gather_u32index_s32(svptrue_b32(), from, indices);
+  // Load the size/2 values this reads into the low half and interleave them
+  // with themselves: svzip1 only consumes the low halves of its operands.
+  // The predicate is exact rather than svptrue -- ploaddup may only touch
+  // size/2 elements, and a wider one would read past the end of the input.
+  constexpr uint64_t kHalf = uint64_t(packet_traits<numext::int32_t>::size) / 2;
+  svint32_t lo = svld1_s32(svwhilelt_b32(uint64_t(0), kHalf), from);
+  return svzip1_s32(lo, lo);
 }
 
 template <>
 EIGEN_STRONG_INLINE PacketXi ploadquad<PacketXi>(const numext::int32_t* from) {
-  svuint32_t indices = svindex_u32(0, 1);  // index {base=0, base+step=1, base+step*2, ...}
-  indices = svzip1_u32(indices, indices);  // index in the format {a0, a0, a1, a1, a2, a2, ...}
-  indices = svzip1_u32(indices, indices);  // index in the format {a0, a0, a0, a0, a1, a1, a1, a1, ...}
-  return svld1_gather_u32index_s32(svptrue_b32(), from, indices);
+  // As ploaddup, one zip further: size/4 values, each repeated four times.
+  // At the smallest vector length size/4 rounds to zero, where one element
+  // still has to be read.
+  constexpr uint64_t kQuarter = numext::maxi(uint64_t(packet_traits<numext::int32_t>::size) / 4, uint64_t(1));
+  svint32_t lo = svld1_s32(svwhilelt_b32(uint64_t(0), kQuarter), from);
+  lo = svzip1_s32(lo, lo);
+  return svzip1_s32(lo, lo);
 }
 
 template <>
@@ -279,32 +304,13 @@ EIGEN_STRONG_INLINE numext::int32_t predux<PacketXi>(const PacketXi& a) {
 
 template <>
 EIGEN_STRONG_INLINE numext::int32_t predux_mul<PacketXi>(const PacketXi& a) {
-  EIGEN_STATIC_ASSERT((EIGEN_ARM64_SVE_VL % 128 == 0), EIGEN_INTERNAL_ERROR_PLEASE_FILE_A_BUG_REPORT);
-
-  // Multiply the vector by its reverse
+  // Multiply the vector by its reverse.
   svint32_t prod = svmul_s32_x(svptrue_b32(), a, svrev_s32(a));
-  svint32_t half_prod;
 
-  // Extract the high half of the vector. Depending on the VL more reductions need to be done
-  EIGEN_IF_CONSTEXPR (EIGEN_ARM64_SVE_VL >= 2048) {
-    half_prod = svtbl_s32(prod, svindex_u32(32, 1));
-    prod = svmul_s32_x(svptrue_b32(), prod, half_prod);
-  }
-  EIGEN_IF_CONSTEXPR (EIGEN_ARM64_SVE_VL >= 1024) {
-    half_prod = svtbl_s32(prod, svindex_u32(16, 1));
-    prod = svmul_s32_x(svptrue_b32(), prod, half_prod);
-  }
-  EIGEN_IF_CONSTEXPR (EIGEN_ARM64_SVE_VL >= 512) {
-    half_prod = svtbl_s32(prod, svindex_u32(8, 1));
-    prod = svmul_s32_x(svptrue_b32(), prod, half_prod);
-  }
-  EIGEN_IF_CONSTEXPR (EIGEN_ARM64_SVE_VL >= 256) {
-    half_prod = svtbl_s32(prod, svindex_u32(4, 1));
-    prod = svmul_s32_x(svptrue_b32(), prod, half_prod);
-  }
-  // Last reduction
-  half_prod = svtbl_s32(prod, svindex_u32(2, 1));
-  prod = svmul_s32_x(svptrue_b32(), prod, half_prod);
+  // Reduce with interleave-and-multiply.
+  // NOTE: Skip the final reduction since it is already handled by `rev` above.
+  for (int n = unpacket_traits<PacketXi>::size; n > 2; n >>= 1)
+    prod = svmul_s32_x(svptrue_b32(), svzip1_s32(prod, prod), svzip2_s32(prod, prod));
 
   // The reduction is done to the first element.
   return pfirst<PacketXi>(prod);
@@ -322,16 +328,16 @@ EIGEN_STRONG_INLINE numext::int32_t predux_max<PacketXi>(const PacketXi& a) {
 
 template <int N>
 EIGEN_DEVICE_FUNC inline void ptranspose(PacketBlock<PacketXi, N>& kernel) {
-  int buffer[packet_traits<numext::int32_t>::size * N] = {0};
-  int i = 0;
-
-  PacketXi stride_index = svindex_s32(0, N);
-
-  for (i = 0; i < N; i++) {
-    svst1_scatter_s32index_s32(svptrue_b32(), buffer + i, stride_index, kernel.packet[i]);
-  }
-  for (i = 0; i < N; i++) {
-    kernel.packet[i] = svld1_s32(svptrue_b32(), buffer + i * packet_traits<numext::int32_t>::size);
+  EIGEN_STATIC_ASSERT((N & (N - 1)) == 0, EIGEN_INTERNAL_ERROR_PLEASE_FILE_A_BUG_REPORT);
+  for (int stride = N / 2; stride > 0; stride >>= 1) {
+    for (int block = 0; block < N; block += 2 * stride) {
+      for (int k = 0; k < stride; ++k) {
+        PacketXi lo = svzip1_s32(kernel.packet[block + k], kernel.packet[block + k + stride]);
+        PacketXi hi = svzip2_s32(kernel.packet[block + k], kernel.packet[block + k + stride]);
+        kernel.packet[block + k] = lo;
+        kernel.packet[block + k + stride] = hi;
+      }
+    }
   }
 }
 
@@ -360,6 +366,7 @@ struct packet_traits<float> : default_packet_traits {
     HasMin = 1,
     HasMax = 1,
     HasConj = 1,
+    // See the int32 traits above for why HasSetLinear stays 0.
     HasSetLinear = 0,
     HasReduxp = 0,  // Not implemented in SVE
 
@@ -379,6 +386,7 @@ struct packet_traits<float> : default_packet_traits {
     HasExp = 1,
     HasPow = 1,
     HasSqrt = 1,
+    HasRsqrt = 1,
     HasCbrt = 1,
     HasTanh = EIGEN_FAST_MATH,
     HasErf = EIGEN_FAST_MATH,
@@ -556,6 +564,12 @@ EIGEN_STRONG_INLINE PacketXf pandnot<PacketXf>(const PacketXf& a, const PacketXf
   return svreinterpret_f32_u32(svbic_u32_x(svptrue_b32(), svreinterpret_u32_f32(a), svreinterpret_u32_f32(b)));
 }
 
+// See pselect<PacketXi>.
+template <>
+EIGEN_STRONG_INLINE PacketXf pselect<PacketXf>(const PacketXf& mask, const PacketXf& a, const PacketXf& b) {
+  return svsel_f32(svcmpne_n_s32(svptrue_b32(), svreinterpret_s32_f32(mask), 0), a, b);
+}
+
 template <>
 EIGEN_STRONG_INLINE PacketXf pload<PacketXf>(const float* from) {
   EIGEN_DEBUG_ALIGNED_LOAD return svld1_f32(svptrue_b32(), from);
@@ -568,17 +582,24 @@ EIGEN_STRONG_INLINE PacketXf ploadu<PacketXf>(const float* from) {
 
 template <>
 EIGEN_STRONG_INLINE PacketXf ploaddup<PacketXf>(const float* from) {
-  svuint32_t indices = svindex_u32(0, 1);  // index {base=0, base+step=1, base+step*2, ...}
-  indices = svzip1_u32(indices, indices);  // index in the format {a0, a0, a1, a1, a2, a2, ...}
-  return svld1_gather_u32index_f32(svptrue_b32(), from, indices);
+  // Load the size/2 values this reads into the low half and interleave them
+  // with themselves: svzip1 only consumes the low halves of its operands.
+  // The predicate is exact rather than svptrue -- ploaddup may only touch
+  // size/2 elements, and a wider one would read past the end of the input.
+  constexpr uint64_t kHalf = uint64_t(packet_traits<float>::size) / 2;
+  svfloat32_t lo = svld1_f32(svwhilelt_b32(uint64_t(0), kHalf), from);
+  return svzip1_f32(lo, lo);
 }
 
 template <>
 EIGEN_STRONG_INLINE PacketXf ploadquad<PacketXf>(const float* from) {
-  svuint32_t indices = svindex_u32(0, 1);  // index {base=0, base+step=1, base+step*2, ...}
-  indices = svzip1_u32(indices, indices);  // index in the format {a0, a0, a1, a1, a2, a2, ...}
-  indices = svzip1_u32(indices, indices);  // index in the format {a0, a0, a0, a0, a1, a1, a1, a1, ...}
-  return svld1_gather_u32index_f32(svptrue_b32(), from, indices);
+  // As ploaddup, one zip further: size/4 values, each repeated four times.
+  // At the smallest vector length size/4 rounds to zero, where one element
+  // still has to be read.
+  constexpr uint64_t kQuarter = numext::maxi(uint64_t(packet_traits<float>::size) / 4, uint64_t(1));
+  svfloat32_t lo = svld1_f32(svwhilelt_b32(uint64_t(0), kQuarter), from);
+  lo = svzip1_f32(lo, lo);
+  return svzip1_f32(lo, lo);
 }
 
 template <>
@@ -635,34 +656,15 @@ EIGEN_STRONG_INLINE float predux<PacketXf>(const PacketXf& a) {
 
 // Other reduction functions:
 // mul
-// Only works for SVE Vls multiple of 128
 template <>
 EIGEN_STRONG_INLINE float predux_mul<PacketXf>(const PacketXf& a) {
-  EIGEN_STATIC_ASSERT((EIGEN_ARM64_SVE_VL % 128 == 0), EIGEN_INTERNAL_ERROR_PLEASE_FILE_A_BUG_REPORT);
-  // Multiply the vector by its reverse
+  // Multiply the vector by its reverse.
   svfloat32_t prod = svmul_f32_x(svptrue_b32(), a, svrev_f32(a));
-  svfloat32_t half_prod;
 
-  // Extract the high half of the vector. Depending on the VL more reductions need to be done
-  EIGEN_IF_CONSTEXPR (EIGEN_ARM64_SVE_VL >= 2048) {
-    half_prod = svtbl_f32(prod, svindex_u32(32, 1));
-    prod = svmul_f32_x(svptrue_b32(), prod, half_prod);
-  }
-  EIGEN_IF_CONSTEXPR (EIGEN_ARM64_SVE_VL >= 1024) {
-    half_prod = svtbl_f32(prod, svindex_u32(16, 1));
-    prod = svmul_f32_x(svptrue_b32(), prod, half_prod);
-  }
-  EIGEN_IF_CONSTEXPR (EIGEN_ARM64_SVE_VL >= 512) {
-    half_prod = svtbl_f32(prod, svindex_u32(8, 1));
-    prod = svmul_f32_x(svptrue_b32(), prod, half_prod);
-  }
-  EIGEN_IF_CONSTEXPR (EIGEN_ARM64_SVE_VL >= 256) {
-    half_prod = svtbl_f32(prod, svindex_u32(4, 1));
-    prod = svmul_f32_x(svptrue_b32(), prod, half_prod);
-  }
-  // Last reduction
-  half_prod = svtbl_f32(prod, svindex_u32(2, 1));
-  prod = svmul_f32_x(svptrue_b32(), prod, half_prod);
+  // Reduce with interleave-and-multiply.
+  // NOTE: Skip the final reduction since it is already handled by `rev` above.
+  for (int n = unpacket_traits<PacketXf>::size; n > 2; n >>= 1)
+    prod = svmul_f32_x(svptrue_b32(), svzip1_f32(prod, prod), svzip2_f32(prod, prod));
 
   // The reduction is done to the first element.
   return pfirst<PacketXf>(prod);
@@ -680,17 +682,16 @@ EIGEN_STRONG_INLINE float predux_max<PacketXf>(const PacketXf& a) {
 
 template <int N>
 EIGEN_DEVICE_FUNC inline void ptranspose(PacketBlock<PacketXf, N>& kernel) {
-  EIGEN_ALIGN_MAX float buffer[packet_traits<float>::size * N] = {};
-  int i = 0;
-
-  PacketXi stride_index = svindex_s32(0, N);
-
-  for (i = 0; i < N; i++) {
-    svst1_scatter_s32index_f32(svptrue_b32(), buffer + i, stride_index, kernel.packet[i]);
-  }
-
-  for (i = 0; i < N; i++) {
-    kernel.packet[i] = svld1_f32(svptrue_b32(), buffer + i * packet_traits<float>::size);
+  EIGEN_STATIC_ASSERT((N & (N - 1)) == 0, EIGEN_INTERNAL_ERROR_PLEASE_FILE_A_BUG_REPORT);
+  for (int stride = N / 2; stride > 0; stride >>= 1) {
+    for (int block = 0; block < N; block += 2 * stride) {
+      for (int k = 0; k < stride; ++k) {
+        PacketXf lo = svzip1_f32(kernel.packet[block + k], kernel.packet[block + k + stride]);
+        PacketXf hi = svzip2_f32(kernel.packet[block + k], kernel.packet[block + k + stride]);
+        kernel.packet[block + k] = lo;
+        kernel.packet[block + k + stride] = hi;
+      }
+    }
   }
 }
 
@@ -736,12 +737,14 @@ struct packet_traits<double> : default_packet_traits {
     HasMin = 1,
     HasMax = 1,
     HasConj = 1,
+    // See the int32 traits above for why HasSetLinear stays 0.
     HasSetLinear = 0,
     HasReduxp = 0,  // Not implemented in SVE
 
     HasDiv = 1,
     HasCmp = 1,
-    HasSqrt = 1
+    HasSqrt = 1,
+    HasRsqrt = 1
   };
 };
 
@@ -918,6 +921,12 @@ EIGEN_STRONG_INLINE PacketXd pandnot<PacketXd>(const PacketXd& a, const PacketXd
   return svreinterpret_f64_u64(svbic_u64_x(svptrue_b64(), svreinterpret_u64_f64(a), svreinterpret_u64_f64(b)));
 }
 
+// See pselect<PacketXi>.
+template <>
+EIGEN_STRONG_INLINE PacketXd pselect<PacketXd>(const PacketXd& mask, const PacketXd& a, const PacketXd& b) {
+  return svsel_f64(svcmpne_n_s64(svptrue_b64(), svreinterpret_s64_f64(mask), 0), a, b);
+}
+
 template <>
 EIGEN_STRONG_INLINE PacketXd pload<PacketXd>(const double* from) {
   EIGEN_DEBUG_ALIGNED_LOAD return svld1_f64(svptrue_b64(), from);
@@ -995,18 +1004,17 @@ EIGEN_STRONG_INLINE double predux<PacketXd>(const PacketXd& a) {
   return svaddv_f64(svptrue_b64(), a);
 }
 
-// Only works for SVE VLs that are a multiple of 128.
 template <>
 EIGEN_STRONG_INLINE double predux_mul<PacketXd>(const PacketXd& a) {
-  EIGEN_STATIC_ASSERT((EIGEN_ARM64_SVE_VL % 128 == 0), EIGEN_INTERNAL_ERROR_PLEASE_FILE_A_BUG_REPORT);
-  // Multiplying by the reverse pairs lane i with lane n-1-i, leaving every
-  // product of a pair in both halves; halving the span each round then folds
-  // the halves together. At VL = 128 there are two lanes and the first multiply
-  // has already combined them.
+  // Multiply the vector by its reverse.
   svfloat64_t prod = svmul_f64_x(svptrue_b64(), a, svrev_f64(a));
-  for (int span = unpacket_traits<PacketXd>::size / 2; span >= 2; span >>= 1) {
-    prod = svmul_f64_x(svptrue_b64(), prod, svtbl_f64(prod, svindex_u64(span, 1)));
-  }
+
+  // Reduce with interleave-and-multiply.
+  // NOTE: Skip the final reduction since it is already handled by `rev` above.
+  for (int n = unpacket_traits<PacketXd>::size; n > 2; n >>= 1)
+    prod = svmul_f64_x(svptrue_b64(), svzip1_f64(prod, prod), svzip2_f64(prod, prod));
+
+  // The reduction is done to the first element.
   return pfirst<PacketXd>(prod);
 }
 
@@ -1022,23 +1030,30 @@ EIGEN_STRONG_INLINE double predux_max<PacketXd>(const PacketXd& a) {
 
 template <int N>
 EIGEN_DEVICE_FUNC inline void ptranspose(PacketBlock<PacketXd, N>& kernel) {
-  EIGEN_ALIGN_MAX double buffer[packet_traits<double>::size * N] = {};
-  int i = 0;
-
-  svint64_t stride_index = svindex_s64(0, N);
-
-  for (i = 0; i < N; i++) {
-    svst1_scatter_s64index_f64(svptrue_b64(), buffer + i, stride_index, kernel.packet[i]);
-  }
-
-  for (i = 0; i < N; i++) {
-    kernel.packet[i] = svld1_f64(svptrue_b64(), buffer + i * packet_traits<double>::size);
+  EIGEN_STATIC_ASSERT((N & (N - 1)) == 0, EIGEN_INTERNAL_ERROR_PLEASE_FILE_A_BUG_REPORT);
+  for (int stride = N / 2; stride > 0; stride >>= 1) {
+    for (int block = 0; block < N; block += 2 * stride) {
+      for (int k = 0; k < stride; ++k) {
+        PacketXd lo = svzip1_f64(kernel.packet[block + k], kernel.packet[block + k + stride]);
+        PacketXd hi = svzip2_f64(kernel.packet[block + k], kernel.packet[block + k + stride]);
+        kernel.packet[block + k] = lo;
+        kernel.packet[block + k + stride] = hi;
+      }
+    }
   }
 }
 
 template <>
 EIGEN_STRONG_INLINE PacketXd psqrt<PacketXd>(const PacketXd& a) {
   return svsqrt_f64_x(svptrue_b64(), a);
+}
+
+template <>
+EIGEN_STRONG_INLINE PacketXd prsqrt<PacketXd>(const PacketXd& a) {
+  // Newton off the FRSQRTE seed, as NEON's Packet2d does. The generic
+  // preciprocal(psqrt(x)) form is correct but pays a double-precision FDIV,
+  // which is slow enough here to lose to the scalar loop.
+  return generic_rsqrt_newton_step<PacketXd, /*Steps=*/3>::run(a, svrsqrte_f64(a));
 }
 
 }  // namespace internal

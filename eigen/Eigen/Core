@@ -126,6 +126,10 @@
 
 // Required for querying cache sizes on Linux and macOS.
 #if EIGEN_OS_LINUX
+#if !defined(EIGEN_NO_CPU_CACHE_SYSFS)
+#include <cstdio>
+#include <sched.h>
+#endif
 #include <unistd.h>
 #elif EIGEN_OS_MAC
 #include <sys/types.h>
@@ -280,6 +284,7 @@ using std::size_t;
 #include "src/Core/arch/SVE/PacketMath.h"
 #include "src/Core/arch/SVE/TypeCasting.h"
 #include "src/Core/arch/SVE/MathFunctions.h"
+#include "src/Core/arch/SVE/Complex.h"
 #elif defined EIGEN_VECTORIZE_RVV10
 #include "src/Core/arch/RVV10/PacketMathDecl.h"
 #include "src/Core/arch/RVV10/PacketMath.h"

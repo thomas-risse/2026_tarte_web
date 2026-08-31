@@ -44,8 +44,10 @@ private:
     // General settings
     bool radiation_{true};
     bool yielding_walls_{false};
-    bool time_varying_geometry_{false};
-
+    bool time_varying_geometry_{false},
+        pumped_flow_{true}; // If pumped flow is off, then geometry can be updated once per buffer
+    int N_update_geometry_{1};
+    int update_counter_geometry_{0};
     // Articulation
     ArrayN S_direct_, S_target_, S_direct_last_;
     ArrayNm1 S_dual_;
@@ -92,7 +94,6 @@ private:
     void UpdateCoefficients();
 
     void filterSdirectTarget();
-    void initializeLPFStates();
     void set_N_lpf(int num);
 
     // Power variables
@@ -158,7 +159,7 @@ public:
     inline ftype get_wall_area_damping() { return wall_area_damping_; }
     inline float get_lpf_frequency() { return lpf_frequency_; }
 
-    void getTargetGeometry(ftype* out, size_t N)
+    void getTargetGeometry(ftype* out, const size_t N)
     {
         if (N == N_) {
             for (size_t i = 0; i < N; ++i) {
@@ -168,33 +169,53 @@ public:
     }
 
     // Setters
-    inline void set_radiation(bool isRadiating)
+    inline void set_radiation(const bool isRadiating)
     {
         radiation_ = isRadiating;
         UpdateCoefficients();
     }
-    inline void set_yielding_walls(bool isYielding)
+    inline void set_yielding_walls(const bool isYielding)
     {
         yielding_walls_ = isYielding;
         UpdateCoefficients();
     }
-    inline void set_time_varying_geometry(bool isVarying) { time_varying_geometry_ = isVarying; }
-    void set_c0(ftype sound_velocity)
+    inline void set_time_varying_geometry(const bool isVarying) { time_varying_geometry_ = isVarying; }
+    inline void set_N_update_geometry(const int NUpdateGeometry)
+    {
+        N_update_geometry_ = std::max(NUpdateGeometry, 1);
+        initializeFilters();
+        if (NUpdateGeometry > 1) {
+            pumped_flow_ = false;
+        }
+    }
+    void set_c0(const ftype sound_velocity)
     {
         c0_ = sound_velocity;
         DspSetup(sr_);
     }
-    void set_l0(ftype length)
+    inline void set_pumped_flow(const bool pumpedFlow)
+    {
+        // Only sets to on if geometry is varying and updated every sample.
+        if (pumpedFlow == true) {
+            if (time_varying_geometry_ and (N_update_geometry_ == 1)) {
+                pumped_flow_ = pumpedFlow;
+            }
+        } else {
+            pumped_flow_ = pumpedFlow;
+        }
+    }
+    void set_l0(const ftype length)
     {
         l0_ = length;
         DspSetup(sr_);
     }
-    void set_rho0(ftype rest_density)
+    void set_rho0(const ftype rest_density)
     {
         rho0_ = rest_density;
         UpdateRadiationParameters();
         UpdateCoefficients();
     }
+    void initializeFilters(); //.Can be used to force geometry before begining a simulation with varying geometry
 };
 
 } // namespace tarte

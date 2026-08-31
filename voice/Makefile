@@ -15,7 +15,7 @@ build: $(SRCS)
 		-s EXPORT_ES6=1 \
 		-s EXPORTED_FUNCTIONS="['_malloc']" \
 		-s EXPORTED_RUNTIME_METHODS="['HEAPF32']"\
-		
+		-msimd128\
 
 clean:
 	@rm -f build/voice-kernel.wasmmodule.js
