@@ -65,4 +65,17 @@ render(html`
         @input=${e=>voice.parameters.get('a_lc').linearRampToValueAtTime(e.detail.value, audioContext.currentTime + 0.5)}
         ></sc-slider>
   </div>
+  <div>
+    <h3>Vowel</h3>
+    <sc-dots
+      capture-events = true
+      persist-events = true
+      .value=${[{ x: 0.5, y: 0.5 }]}
+      @input=${e=>{
+        voice.parameters.get('F1').linearRampToValueAtTime(e.detail.value[0].x, audioContext.currentTime + 0.5);
+      voice.parameters.get('F2').linearRampToValueAtTime(e.detail.value[0].y, audioContext.currentTime + 0.5);
+      }
+      }
+    ></sc-dots>
+  </div>
 `, document.body);

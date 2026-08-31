@@ -51,6 +51,18 @@ class VoiceProcessor extends AudioWorkletProcessor {
       minValue:0,
       maxValue:1.0,
     },
+    {
+      name:"F1",
+      defaultValue:0.5,
+      minValue:0,
+      maxValue:1,
+    },
+    {
+      name:"F2",
+      defaultValue:0.5,
+      minValue:0,
+      maxValue:1,
+    },
   ]
   };
 
@@ -69,7 +81,8 @@ class VoiceProcessor extends AudioWorkletProcessor {
         this._module, RENDER_QUANTUM_FRAMES, 2, MAX_CHANNEL_COUNT);
       this._heapOutputBuffer = new FreeQueue(
         this._module, RENDER_QUANTUM_FRAMES, 2, MAX_CHANNEL_COUNT);
-      this._kernel = new this._module.VoiceKernel();
+      this._kernel = new this._module.VoiceKernel(sampleRate);
+      this._kernel.setGeometryFromFormants(414.5, 1455);
       console.log('Voice WASM worklet initialized successfully');
     });
   }
@@ -102,6 +115,10 @@ class VoiceProcessor extends AudioWorkletProcessor {
     const ta = parameters['a_ta'];
     const lc = parameters['a_lc'];
     this._kernel.setMusclesActivation(ct[0], ta[0], lc[0]);
+
+    const F1 = parameters['F1'][0] * (601 - 228) + 228;
+    const F2 = parameters['F2'][0] * (2200 - 710) + 710;
+    this._kernel.setGeometryFromFormants(F1, F2);
 
     // For this given render quantum, the channel count of the node is fixed
     // and identical for the input and the output.
