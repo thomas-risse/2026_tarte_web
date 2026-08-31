@@ -1,8 +1,5 @@
 {
-  "scripts": {
-    "dev": "\"esbuild main.js --bundle --format=esm --watch --sourcemap=inline --outfile=build/index.js\" \"serve\"",
-    "build": "esbuild main.js --bundle --format=esm --sourcemap=inline --outfile=build/index.js"
-  },
+  "name": "tarte-web",
   "devDependencies": {
     "concurrently": "^8.2.2",
     "esbuild": "^0.28.2",
@@ -11,6 +8,5 @@
   "dependencies": {
     "@ircam/sc-components": "^3.0.0-alpha.61",
     "lit": "^3.1.4"
-  },
-  "name": "tarte-web"
+  }
 }
