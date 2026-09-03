@@ -11,7 +11,7 @@ const unsigned kBytesPerChannel = kRenderQuantumFrames * sizeof(float);
 
 class VoiceKernel
 {
-  using ftype = double;
+  using ftype = float;
   using Vec = Eigen::ArrayX<ftype>;
 
 private:
